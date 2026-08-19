@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>孙晨曦 - 个人简历</title>
+    
+    <!-- 使用多个CDN备用 + 本地降级 -->
+    <script type="module">
+        // 尝试多个CDN源
+        const cdnUrls = [
+            'https://cdn.jsdelivr.net/npm/@google/model-viewer@3.4.0/dist/model-viewer.min.js',
+            'https://unpkg.com/@google/model-viewer@3.4.0/dist/model-viewer.min.js',
+            'https://cdn.skypack.dev/@google/model-viewer@3.4.0'
+        ];
+
+        async function loadModelViewer() {
+            for (const url of cdnUrls) {
+                try {
+                    const module = await import(url);
+                    console.log('✅ Model Viewer 加载成功:', url);
+                    
+                    // 配置解码器 - 使用多个备用源
+                    if (module.ModelViewerElement) {
+                        const decoderUrls = [
+                            './meshopt_decoder.js',  // 本地优先
+                            'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js',
+                            'https://unpkg.com/meshoptimizer@0.18.1/meshopt_decoder.js'
+                        ];
+                        
+                        // 尝试设置解码器
+                        for (const decoderUrl of decoderUrls) {
+                            try {
+                                module.ModelViewerElement.meshoptDecoderLocation = decoderUrl;
+                                console.log('✅ 解码器配置成功:', decoderUrl);
+                                break;
+                            } catch (e) {
+                                console.warn('⚠️ 解码器配置失败:', decoderUrl);
+                            }
+                        }
+                    }
+                    return true;
+                } catch (error) {
+                    console.warn('⚠️ 尝试加载失败:', url, error);
+                }
+            }
+            
+            // 所有CDN都失败，显示降级提示
+            console.error('❌ 所有CDN加载失败，3D模型无法显示');
+            showModelError();
+            return false;
+        }
+
+        function showModelError() {
+            const container = document.querySelector('.model-container');
+            if (container) {
+                container.innerHTML = `
+                    <div style="
+                        width: 100%;
+                        height: 100%;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        background: rgba(255,255,255,0.1);
+                        border-radius: 1rem;
+                        color: white;
+                        text-align: center;
+                        padding: 2rem;
+                    ">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">🎨</div>
+                        <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">3D模型加载中...</div>
+                        <div style="font-size: 0.9rem; opacity: 0.8;">请稍候或刷新页面</div>
+                    </div>
+                `;
+            }
+        }
+
+        // 页面加载后立即尝试加载
+        loadModelViewer();
+    </script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #06b6d4;
+            --text: #0f172a;
+            --text-gray: #64748b;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+            background: #f8fafc;
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        #particleCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .hero, .main-content, .bottom-nav, .back-to-top, .modal, .toast {
+            position: relative;
+            z-index: 1;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(12, 74, 110, 0.85) 0%, rgba(6, 182, 212, 0.75) 50%, rgba(103, 232, 249, 0.65) 100%);
+            padding: 2rem;
+            overflow: hidden;
+        }
+        .model-container {
+            width: 100%;
+            max-width: 500px;
+            height: 50vh;
+            max-height: 500px;
+            margin-bottom: 2rem;
+            z-index: 2;
+            position: relative;
+        }
+        
+        /* 加载动画 */
+        .model-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            z-index: 1;
+        }
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        model-viewer { 
+            width: 100%; 
+            height: 100%;
+            background-color: transparent;
+        }
+        
+        /* 模型加载失败时的占位符 */
+        .model-fallback {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.1);
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+        }
+        
+        .hero-content {
+            text-align: center;
+            color: white;
+            z-index: 2;
+        }
+        .hero-name {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+        .hero-title {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            opacity: 0.95;
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        .btn {
+            padding: 0.75rem 2rem;
+            border-radius: 2rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            margin: 0 0.5rem;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        .btn-primary {
+            background: white;
+            color: var(--primary);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+            backdrop-filter: blur(10px);
+        }
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-3px);
+        }
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1rem;
+            background: rgba(248, 250, 252, 0.8);
+        }
+        section { padding: 4rem 0; }
+        .section-title {
+            font-size: 2rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 2rem;
+            position: relative;
+            padding-bottom: 1rem;
+        }
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 4px;
+            background: var(--primary);
+            border-radius: 2px;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .card h3 { font-size: 1.5rem; margin-bottom: 1rem; }
+        .card p { color: var(--text-gray); line-height: 1.8; }
+        .timeline-item {
+            position: relative;
+            padding-left: 2rem;
+            margin-bottom: 2rem;
+            border-left: 3px solid var(--primary);
+        }
+        .timeline-item h3 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+        .timeline-item .date { color: var(--text-gray); font-size: 0.9rem; margin-bottom: 1rem; }
+        .timeline-item ul { margin-left: 1.5rem; color: var(--text-gray); }
+        .timeline-item li { margin-bottom: 0.5rem; }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .image-item {
+            aspect-ratio: 1;
+            overflow: hidden;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            position: relative;
+            background: #f1f5f9;
+        }
+        .image-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s;
+        }
+        .image-item:hover img { transform: scale(1.1); }
+        
+        /* 图片加载失败占位符 */
+        .image-item::before {
+            content: '📷';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            opacity: 0.3;
+            z-index: -1;
+        }
+        
+        .hobby-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+        .hobby-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .hobby-card .image-grid { padding: 0.5rem; }
+        .hobby-card .hobby-content { padding: 1.5rem; }
+        .hobby-card h3 { font-size: 1.25rem; margin-bottom: 0.75rem; }
+        .skill-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-top: 1rem;
+        }
+        .skill-tag {
+            padding: 0.5rem 1rem;
+            background: var(--primary);
+            color: white;
+            border-radius: 1.5rem;
+            font-size: 0.9rem;
+            transition: transform 0.3s;
+        }
+        .skill-tag:hover { transform: translateY(-3px); }
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+        .contact-item {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.3s;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .contact-item:hover { transform: translateY(-5px); }
+        .contact-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-top: 1px solid rgba(226, 232, 240, 0.5);
+            padding: 0.75rem;
+            display: flex;
+            justify-content: space-around;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.25rem;
+            color: var(--text-gray);
+            font-size: 0.75rem;
+            text-decoration: none;
+            padding: 0.5rem;
+        }
+        .nav-item.active { color: var(--primary); }
+        .nav-icon { font-size: 1.5rem; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.show { display: flex; }
+        .modal img { max-width: 90%; max-height: 90%; }
+        .modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            color: white;
+            font-size: 2rem;
+            cursor: pointer;
+            background: rgba(255,255,255,0.2);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .toast {
+            position: fixed;
+            bottom: 5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 2rem;
+            display: none;
+            z-index: 1001;
+        }
+        .toast.show { display: block; }
+        .back-to-top {
+            position: fixed;
+            bottom: 5rem;
+            right: 1rem;
+            width: 50px;
+            height: 50px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 99;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.4);
+        }
+        .back-to-top.show { display: flex; }
+        .back-to-top:hover { transform: translateY(-3px); }
+        @media (max-width: 768px) {
+            .hero-name { font-size: 2rem; }
+            .hero-title { font-size: 1.2rem; }
+            section { padding: 3rem 0 5rem; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="particleCanvas"></canvas>
+
+    <section class="hero" id="hero">
+        <div class="model-container">
+            <!-- 加载提示 -->
+            <div class="model-loading">
+                <div class="spinner"></div>
+                <div>3D模型加载中...</div>
+            </div>
+            
+            <!-- 3D模型 -->
+            <model-viewer 
+                src="avatar.glb" 
+                alt="孙晨曦3D模型" 
+                auto-rotate 
+                camera-controls 
+                shadow-intensity="1"
+                loading="eager"
+                reveal="auto"
+                camera-orbit="0deg 75deg 105%"
+                min-camera-orbit="auto auto 50%"
+                max-camera-orbit="auto auto 200%"
+                style="display: none;">
+                
+                <!-- 进度条 -->
+                <div slot="progress-bar" style="
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 200px;
+                    text-align: center;
+                    color: white;
+                ">
+                    <div class="spinner"></div>
+                    <div style="margin-top: 1rem;">加载中...</div>
+                </div>
+            </model-viewer>
+        </div>
+        <div class="hero-content">
+            <h1 class="hero-name">孙晨曦</h1>
+            <p class="hero-title">机械设计制造及其自动化专业 · 在读本科生</p>
+            <div>
+                <button class="btn btn-primary" onclick="document.getElementById('contact').scrollIntoView({behavior:'smooth'})">📧 联系我</button>
+                <button class="btn btn-secondary" onclick="window.print()">📄 下载简历</button>
+            </div>
+        </div>
+    </section>
+
+    <div class="main-content">
+        <section id="education">
+            <h2 class="section-title">🎓 教育背景</h2>
+            <div class="card">
+                <h3>郑州航空工业管理学院</h3>
+                <p><strong>专业：</strong>机械设计制造及其自动化</p>
+                <p><strong>时间：</strong>2024.09 - 2028.06（预计）</p>
+                <p><strong>核心课程：</strong>机械制图、工程力学、机械设计基础、材料力学、CAD/CAM技术、数控技术</p>
+            </div>
+        </section>
+
+        <section id="experience">
+            <h2 class="section-title">💼 工作经历</h2>
+            <div class="timeline-item">
+                <h3>当地球馆 · 羽毛球助教</h3>
+                <div class="date">📅 2026.07 - 2026.08</div>
+                <ul>
+                    <li>主导 20+ 场羽毛球训练课程，服务学员超 50 人次</li>
+                    <li>设计并实施个性化训练方案，提升学员技能水平</li>
+                    <li>负责场馆日常运营，日均服务量提升至 40+ 人次</li>
+                </ul>
+                <div class="image-grid">
+                    <div class="image-item" onclick="previewImage('2.jpg')"><img src="2.jpg" alt="羽毛球1" onerror="this.style.opacity='0.3'"></div>
+                    <div class="image-item" onclick="previewImage('3.jpg')"><img src="3.jpg" alt="羽毛球2" onerror="this.style.opacity='0.3'"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="skills">
+            <h2 class="section-title">🛠️ 专业技能</h2>
+            <div class="card">
+                <h3>💬 专业能力</h3>
+                <div class="skill-tags">
+                    <span class="skill-tag">沟通表达</span>
+                    <span class="skill-tag">教学指导</span>
+                    <span class="skill-tag">团队协作</span>
+                    <span class="skill-tag">责任心强</span>
+                </div>
+            </div>
+            <div class="card">
+                <h3>📐 工程技能</h3>
+                <div class="skill-tags">
+                    <span class="skill-tag">机械制图</span>
+                    <span class="skill-tag">CAD/CAM</span>
+                    <span class="skill-tag">数控技术</span>
+                </div>
+            </div>
+        </section>
+
+        <section id="hobbies">
+            <h2 class="section-title">🎨 兴趣爱好</h2>
+            <div class="hobby-grid">
+                <div class="hobby-card">
+                    <div class="image-grid">
+                        <div class="image-item" onclick="previewImage('2.jpg')"><img src="2.jpg" alt="羽毛球" onerror="this.style.opacity='0.3'"></div>
+                        <div class="image-item" onclick="previewImage('3.jpg')"><img src="3.jpg" alt="羽毛球" onerror="this.style.opacity='0.3'"></div>
+                    </div>
+                    <div class="hobby-content">
+                        <h3>🏸 羽毛球</h3>
+                        <p>具备专业级运动技能与教学经验，曾获县级比赛优秀奖</p>
+                    </div>
+                </div>
+                <div class="hobby-card">
+                    <div class="image-grid">
+                        <div class="image-item" onclick="previewImage('1.jpg')"><img src="1.jpg" alt="烹饪" onerror="this.style.opacity='0.3'"></div>
+                        <div class="image-item" onclick="previewImage('4.png')"><img src="4.png" alt="烹饪" onerror="this.style.opacity='0.3'"></div>
+                    </div>
+                    <div class="hobby-content">
+                        <h3>🍳 烹饪</h3>
+                        <p>热爱烹饪，善于尝试新菜谱与创意料理</p>
+                    </div>
+                </div>
+                <div class="hobby-card">
+                    <div class="image-grid">
+                        <div class="image-item" onclick="previewImage('5.jpg')"><img src="5.jpg" alt="骑行" onerror="this.style.opacity='0.3'"></div>
+                        <div class="image-item" onclick="previewImage('6.jpg')"><img src="6.jpg" alt="骑行" onerror="this.style.opacity='0.3'"></div>
+                    </div>
+                    <div class="hobby-content">
+                        <h3>🚴 骑行</h3>
+                        <p>探索城市与自然风光，培养耐力与意志力</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="contact">
+            <h2 class="section-title">📞 联系方式</h2>
+            <div class="contact-grid">
+                <div class="contact-item" onclick="copy('16603981209')">
+                    <div class="contact-icon">📱</div>
+                    <div>166-0398-1209</div>
+                </div>
+                <div class="contact-item" onclick="copy('1026891855@qq.com')">
+                    <div class="contact-icon">📧</div>
+                    <div>点击复制邮箱</div>
+                </div>
+                <div class="contact-item" onclick="copy('hnymscx')">
+                    <div class="contact-icon">💬</div>
+                    <div>微信: hnymscx</div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <nav class="bottom-nav">
+        <a href="#hero" class="nav-item"><div class="nav-icon">🏠</div><div>首页</div></a>
+        <a href="#education" class="nav-item"><div class="nav-icon">🎓</div><div>教育</div></a>
+        <a href="#experience" class="nav-item"><div class="nav-icon">💼</div><div>经历</div></a>
+        <a href="#skills" class="nav-item"><div class="nav-icon">🛠️</div><div>技能</div></a>
+        <a href="#hobbies" class="nav-item"><div class="nav-icon">🎨</div><div>爱好</div></a>
+        <a href="#contact" class="nav-item"><div class="nav-icon">📞</div><div>联系</div></a>
+    </nav>
+
+    <button class="back-to-top" id="backTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+    
+    <div class="modal" id="modal" onclick="this.classList.remove('show')">
+        <span class="modal-close">×</span>
+        <img id="modalImg" src="" alt="预览">
+    </div>
+    
+    <div class="toast" id="toast"></div>
+
+    <script>
+// ===== 3D模型加载监控 =====
+document.addEventListener('DOMContentLoaded', () => {
+    const modelViewer = document.querySelector('model-viewer');
+    const loadingDiv = document.querySelector('.model-loading');
+    
+    if (modelViewer) {
+        // 模型加载成功
+        modelViewer.addEventListener('load', () => {
+            console.log('✅ 3D模型加载成功');
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            modelViewer.style.display = 'block';
+        });
+        
+        // 模型加载进度
+        modelViewer.addEventListener('progress', (event) => {
+            const progress = event.detail.totalProgress;
+            console.log('📊 加载进度:', Math.round(progress * 100) + '%');
+        });
+        
+        // 模型加载失败
+        modelViewer.addEventListener('error', (event) => {
+            console.error('❌ 3D模型加载失败:', event);
+            if (loadingDiv) {
+                loadingDiv.innerHTML = `
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
+                        <div style="font-size: 1.1rem; margin-bottom: 0.5rem;">3D模型暂时无法加载</div>
+                        <div style="font-size: 0.9rem; opacity: 0.8;">请检查网络连接或刷新页面</div>
+                        <button onclick="location.reload()" style="
+                            margin-top: 1rem;
+                            padding: 0.5rem 1.5rem;
+                            background: white;
+                            color: #06b6d4;
+                            border: none;
+                            border-radius: 2rem;
+                            cursor: pointer;
+                            font-weight: 600;
+                        ">🔄 重新加载</button>
+                    </div>
+                `;
+            }
+        });
+        
+        // 超时检测（10秒）
+        setTimeout(() => {
+            if (loadingDiv && loadingDiv.style.display !== 'none') {
+                console.warn('⚠️ 模型加载超时');
+                loadingDiv.innerHTML = `
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 3rem; margin-bottom: 1rem;">⏱️</div>
+                        <div style="font-size: 1.1rem; margin-bottom: 0.5rem;">加载时间较长</div>
+                        <div style="font-size: 0.9rem; opacity: 0.8;">请耐心等待或刷新页面</div>
+                    </div>
+                `;
+            }
+        }, 10000);
+    }
+});
+
+// ===== 梵高星空 - 卷曲流场（无直线）=====
+const canvas = document.getElementById('particleCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    initParticles();
+});
+
+const mouse = { x: canvas.width / 2, y: canvas.height / 2, radius: 150 };
+
+document.addEventListener('mousemove', (e) => {
+    mouse.x = e.x;
+    mouse.y = e.y;
+});
+
+let time = 0;
+
+// 简单噪声函数
+function noise(x, y, seed = 0) {
+    const n = Math.sin(x * 12.9898 + y * 78.233 + seed) * 43758.5453;
+    return n - Math.floor(n);
+}
+
+// 平滑噪声
+function smoothNoise(x, y, seed = 0) {
+    const corners = (noise(x-1, y-1, seed) + noise(x+1, y-1, seed) + noise(x-1, y+1, seed) + noise(x+1, y+1, seed)) / 16;
+    const sides = (noise(x-1, y, seed) + noise(x+1, y, seed) + noise(x, y-1, seed) + noise(x, y+1, seed)) / 8;
+    const center = noise(x, y, seed) / 4;
+    return corners + sides + center;
+}
+
+// 插值噪声
+function interpolatedNoise(x, y, seed = 0) {
+    const intX = Math.floor(x);
+    const fracX = x - intX;
+    const intY = Math.floor(y);
+    const fracY = y - intY;
+    
+    const v1 = smoothNoise(intX, intY, seed);
+    const v2 = smoothNoise(intX + 1, intY, seed);
+    const v3 = smoothNoise(intX, intY + 1, seed);
+    const v4 = smoothNoise(intX + 1, intY + 1, seed);
+    
+    const i1 = v1 * (1 - fracX) + v2 * fracX;
+    const i2 = v3 * (1 - fracX) + v4 * fracX;
+    
+    return i1 * (1 - fracY) + i2 * fracY;
+}
+
+// Perlin 噪声
+function perlin(x, y, seed = 0) {
+    let total = 0;
+    let frequency = 1;
+    let amplitude = 1;
+    let maxValue = 0;
+    
+    for (let i = 0; i < 4; i++) {
+        total += interpolatedNoise(x * frequency, y * frequency, seed) * amplitude;
+        maxValue += amplitude;
+        amplitude *= 0.5;
+        frequency *= 2;
+    }
+    
+    return total / maxValue;
+}
+
+// 获取流场向量（卷曲噪声 - 无散度）
+function getFlowField(x, y, t) {
+    const scale = 0.002;
+    const eps = 0.01;
+    
+    // 计算势场的偏导数
+    const n1 = perlin(x * scale, y * scale, t);
+    const n2 = perlin((x + eps) * scale, y * scale, t);
+    const n3 = perlin(x * scale, (y + eps) * scale, t);
+    
+    const dNdx = (n2 - n1) / eps;
+    const dNdy = (n3 - n1) / eps;
+    
+    // 卷曲：旋转90度（交换分量并取反一个）
+    return {
+        vx: -dNdy,
+        vy: dNdx
+    };
+}
+
+// 粒子类
+class Particle {
+    constructor() {
+        this.reset();
+        this.history = [];
+        this.maxHistory = 8;
+        
+        const colors = [
+            'rgba(103, 232, 249, 0.9)',
+            'rgba(6, 182, 212, 0.85)',
+            'rgba(8, 145, 178, 0.75)',
+            'rgba(14, 116, 144, 0.7)',
+            'rgba(255, 255, 255, 0.95)',
+            'rgba(224, 242, 254, 0.85)',
+            'rgba(240, 249, 255, 0.9)',
+            'rgba(255, 237, 160, 0.65)',
+        ];
+        this.color = colors[Math.floor(Math.random() * colors.length)];
+        this.size = Math.random() * 2 + 1;
+    }
+    
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.vx = 0;
+        this.vy = 0;
+        this.age = 0;
+        this.maxAge = 200 + Math.random() * 300;
+    }
+
+    update() {
+        // 获取流场向量
+        const flow = getFlowField(this.x, this.y, time);
+        
+        let ax = flow.vx * 3;
+        let ay = flow.vy * 3;
+        
+        // 鼠标漩涡
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < mouse.radius && dist > 1) {
+            const force = (mouse.radius - dist) / mouse.radius;
+            const angle = Math.atan2(dy, dx) + Math.PI * 0.5;
+            ax += Math.cos(angle) * force * 5;
+            ay += Math.sin(angle) * force * 5;
+        }
+        
+        // 更新速度（带阻尼）
+        this.vx += ax * 0.05;
+        this.vy += ay * 0.05;
+        this.vx *= 0.95;
+        this.vy *= 0.95;
+        
+        // 限速
+        const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+        if (speed > 3) {
+            this.vx = (this.vx / speed) * 3;
+            this.vy = (this.vy / speed) * 3;
+        }
+        
+        // 更新位置
+        this.x += this.vx;
+        this.y += this.vy;
+        
+        // 边界循环
+        if (this.x < 0) this.x = canvas.width;
+        if (this.x > canvas.width) this.x = 0;
+        if (this.y < 0) this.y = canvas.height;
+        if (this.y > canvas.height) this.y = 0;
+        
+        // 记录轨迹
+        this.history.push({ x: this.x, y: this.y });
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        }
+        
+        // 年龄
+        this.age++;
+        if (this.age > this.maxAge) {
+            this.reset();
+            this.history = [];
+        }
+    }
+
+    draw() {
+        // 轨迹线
+        if (this.history.length > 1) {
+            ctx.beginPath();
+            ctx.moveTo(this.history[0].x, this.history[0].y);
+            
+            for (let i = 1; i < this.history.length; i++) {
+                ctx.lineTo(this.history[i].x, this.history[i].y);
+            }
+            
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = this.size * 0.8;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
+        
+        // 粒子
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+let particlesArray = [];
+
+function initParticles() {
+    particlesArray = [];
+    const count = Math.min(Math.floor((canvas.width * canvas.height) / 8000), 600);
+    for (let i = 0; i < count; i++) {
+        particlesArray.push(new Particle());
+    }
+}
+
+function animate() {
+    ctx.fillStyle = 'rgba(12, 30, 50, 0.1)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    time += 0.3;
+    
+    for (let i = 0; i < particlesArray.length; i++) {
+        particlesArray[i].update();
+        particlesArray[i].draw();
+    }
+    
+    requestAnimationFrame(animate);
+}
+
+initParticles();
+animate();
+
+// ===== 其他功能 =====
+function previewImage(src) {
+    const modalImg = document.getElementById('modalImg');
+    modalImg.onerror = () => {
+        showToast('图片加载失败');
+        document.getElementById('modal').classList.remove('show');
+    };
+    modalImg.src = src;
+    document.getElementById('modal').classList.add('show');
+}
+
+function copy(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            showToast('已复制: ' + text);
+        }).catch(() => {
+            // 降级方案
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+        document.execCommand('copy');
+        showToast('已复制: ' + text);
+    } catch (err) {
+        showToast('复制失败，请手动复制');
+    }
+    document.body.removeChild(textarea);
+}
+
+function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+window.addEventListener('scroll', () => {
+    const backTop = document.getElementById('backTop');
+    if (window.scrollY > 300) {
+        backTop.classList.add('show');
+    } else {
+        backTop.classList.remove('show');
+    }
+});
+
+const sections = document.querySelectorAll('section[id]');
+const navItems = document.querySelectorAll('.nav-item');
+
+window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        if (scrollY >= (sectionTop - 200)) {
+            current = section.getAttribute('id');
+        }
+    });
+    
+    navItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('href') === '#' + current) {
+            item.classList.add('active');
+        }
+    });
+});
+</script>
+</body>
+</html>
