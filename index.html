@@ -14,33 +14,24 @@
             'https://cdn.skypack.dev/@google/model-viewer@3.4.0'
         ];
 
-        async function loadModelViewer() {
-            for (const url of cdnUrls) {
-                try {
-                    const module = await import(url);
-                    console.log('✅ Model Viewer 加载成功:', url);
-                    
-                    // 配置解码器 - 使用多个备用源
-                    if (module.ModelViewerElement) {
-                        const decoderUrls = [
-                            'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js',  // 本地优先
-                            'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js',
-                            'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js'
-                        ];
-                        
-                        // 尝试设置解码器
-                        for (const decoderUrl of decoderUrls) {
-                            try {
-                                module.ModelViewerElement.meshoptDecoderLocation = decoderUrl;
-                                console.log('✅ 解码器配置成功:', decoderUrl);
-                                break;
-                            } catch (e) {
-                                console.warn('⚠️ 解码器配置失败:', decoderUrl);
-                            }
-                        }
-                    }
-                    return true;
-                } catch (error) {
+    async function loadModelViewer() {
+        for (const url of cdnUrls) {
+            try {
+                const module = await import(url);
+                console.log('✅ Model Viewer 加载成功:', url);
+                
+                // 立即配置解码器（必须在模型加载前）
+                const { ModelViewerElement } = module;
+                ModelViewerElement.meshoptDecoderLocation = 'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js';
+                console.log('✅ 解码器配置成功: https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js');
+                
+                return true;
+            } catch (error) {
+                console.warn('⚠️ 尝试加载失败:', url, error);
+            }
+        }
+    }
+
                     console.warn('⚠️ 尝试加载失败:', url, error);
                 }
             }
