@@ -24,6 +24,16 @@
                 ModelViewerElement.meshoptDecoderLocation = 'https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js';
                 console.log('✅ 解码器配置成功: https://cdn.jsdelivr.net/npm/meshoptimizer@0.18.1/meshopt_decoder.js');
                 
+                // 等待一小段时间确保配置生效
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // 现在才设置模型路径，开始加载
+                const modelViewer = document.getElementById('my-model-viewer');
+                if (modelViewer) {
+                    modelViewer.src = './scx666.glb';
+                    console.log('🚀 开始加载3D模型');
+                }
+                
                 return true;
             } catch (error) {
                 console.warn('⚠️ 尝试加载失败:', url, error);
@@ -47,14 +57,14 @@
         `;
     }
 
-    // 立即加载
-    loadModelViewer().catch(err => {
-        console.error('❌ 加载出错:', err);
-        showModelError();
-    });
+    // 页面加载完成后再执行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadModelViewer);
+    } else {
+        loadModelViewer();
+    }
 </script>
-
-    
+ 
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
